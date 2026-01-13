@@ -1,0 +1,165 @@
+---
+title: "Codon Bias Analysis"
+author: "Hannah Serio"
+date: "2025-05-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+
+```
+
+## Codon Bias Analysis (Near-Cognate Codons)
+```{r cognateCodonProportions, fig.width=12, fig.height=6, fig.path='R_plots_codonBiasRiboSeqGenes/', dev=c('png', 'pdf')}
+
+# Read the codon counts
+utr <- read.csv("/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome/allCodons/5utrCodonCountsRiboSeq.csv", header = TRUE, stringsAsFactors = FALSE)
+# Read the pos1 file (tab-delimited)
+pos1 <- read.table("/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome/allCodons/pos1CodonFreq.txt", header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+colnames(pos1) <- c("Codon", "Count")
+
+utr <- utr %>%
+  mutate(Count = as.numeric(Count)) %>%
+  mutate(Frequency = Count / sum(Count, na.rm = TRUE))
+
+pos1 <- pos1 %>%
+  mutate(Count = as.numeric(Count)) %>%
+  mutate(Frequency = Count / sum(Count, na.rm = TRUE))
+
+utr$Codon <- gsub("T", "U", utr$Codon)
+pos1$Codon <- gsub("T", "U", pos1$Codon)
+
+# Define codons to highlight in red
+highlight_codons <- c("ATG", "GTG", "TTG", "CTG", "ATA", "ATC", "ATT", "AGG", "ACG", "AAG")
+highlight_codons <- gsub("T", "U", highlight_codons)
+
+# filter to only highlight codons
+utr_highlight <- utr %>% filter(Codon %in% highlight_codons)
+pos1_highlight <- pos1 %>% filter(Codon %in% highlight_codons)
+
+# recalculate frequency after filtering
+utr_highlight <- utr_highlight %>%
+  mutate(Frequency = Count / sum(Count))
+
+pos1_highlight <- pos1_highlight %>%
+  mutate(Frequency = Count / sum(Count))
+
+# merge and calculate frequency difference
+merged_highlight <- merge(utr_highlight, pos1_highlight, by = "Codon", suffixes = c("_utr", "_pos1")) %>%
+  mutate(Frequency_Diff = Frequency_pos1 - Frequency_utr)
+
+# add highlighting flag (will all be "highlight")
+merged_highlight$Highlight <- "highlight"
+
+# sort and set factor levels
+merged_highlight <- merged_highlight %>% arrange(Frequency_Diff)
+merged_highlight$Codon <- factor(merged_highlight$Codon, levels = merged_highlight$Codon)
+
+# total counts (recomputed)
+total_utr_highlight <- sum(merged_highlight$Count_utr, na.rm = TRUE)
+total_pos1_highlight <- sum(merged_highlight$Count_pos1, na.rm = TRUE)
+
+# perform proportion test
+pval_df_highlight <- merged_highlight %>%
+  rowwise() %>%
+  mutate(
+    pval = tryCatch({
+      test_result <- prop.test(
+        x = c(Count_utr, Count_pos1),
+        n = c(total_utr_highlight, total_pos1_highlight)
+      )
+      test_result$p.value
+    }, error = function(e) NA)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(pval)) %>%
+  mutate(
+    padj = p.adjust(pval, method = "BH"),
+    p.signif = case_when(
+      padj < 0.001 ~ "***",
+      padj < 0.01 ~ "**",
+      padj < 0.05 ~ "*",
+      TRUE ~ "ns"
+    ),
+    y.position = pmax(Frequency_utr, Frequency_pos1, na.rm = TRUE) + 0.01,
+    group1 = "UTR",
+    group2 = "Pos1"
+  ) %>%
+  select(Codon, group1, group2, padj, p.signif, y.position)
+
+# Prepare long format for plotting
+df_long_highlight <- merged_highlight %>%
+  select(Codon, Frequency_utr, Frequency_pos1) %>%
+  pivot_longer(
+    cols = c(Frequency_utr, Frequency_pos1),
+    names_to = "Region",
+    values_to = "Frequency"
+  ) %>%
+  mutate(
+    Region = case_when(
+      Region == "Frequency_utr" ~ "UTR",
+      Region == "Frequency_pos1" ~ "Pos1",
+      TRUE ~ Region
+    )
+  )
+
+codon_order <- merged_highlight %>%
+  arrange(desc(Frequency_pos1)) %>%
+  pull(Codon)
+
+df_long_highlight$Codon <- factor(df_long_highlight$Codon, levels = codon_order)
+
+face_vector_highlight <- rep("bold", length(unique(df_long_highlight$Codon)))
+
+p_highlight <- ggplot(df_long_highlight, aes(x = Codon, y = Frequency, fill = Region)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.7) +
+  labs(
+    title = "Codon Frequency in 5'UTR for Expressed Genes vs Nm[+1] in Near-Cognate Codons",
+    x = "Codon",
+    y = "Frequency",
+    fill = "5'UTR"
+  ) +
+  scale_fill_manual(
+    values = c(
+    "Pos1" = "#d62728",
+    "UTR" = "skyblue2"
+    ),
+    labels = c(
+    "Pos1" = "Nm[+1]",
+    "UTR" = "Expressed Transcripts"
+  )) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = face_vector_highlight),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black", linewidth = 0.8),
+        axis.ticks = element_line(color = "black"),
+        axis.ticks.length = unit(0.25, "cm"),
+        legend.position = "right"
+  )
+
+# Add significance brackets for highlight codons
+if(nrow(pval_df_highlight) > 0 && any(pval_df_highlight$p.signif != "ns")) {
+  sig_pval_df_highlight <- pval_df_highlight %>% filter(p.signif != "ns")
+  
+  if(nrow(sig_pval_df_highlight) > 0) {
+    p_highlight <- p_highlight + geom_text(
+      data = sig_pval_df_highlight,
+      aes(x = Codon, y = y.position, label = p.signif),
+      inherit.aes = FALSE,
+      vjust = -0.5,
+      size = 3
+    )
+  }
+}
+
+# Display highlight plot
+print(p_highlight)
+
+```

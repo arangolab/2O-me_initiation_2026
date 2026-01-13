@@ -1,0 +1,160 @@
+---
+title: "Cognates 2O-me"
+author: "Hannah Serio"
+date: "2025-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(stringr)
+library(forcats)
+library(tidyr)
+
+```
+
+```{r sites per codon, message=FALSE, warning=FALSE, fig.width=8, fig.height=6, fig.path='sitesPerCodon/', dev=c('png', 'pdf')}
+
+# ---- Helper function to read a section safely ----
+read_section <- function(section_lines, file_path) {
+  tryCatch({
+    df <- read.table(text = section_lines, header = FALSE, stringsAsFactors = FALSE, sep = "\t")
+    if (ncol(df) != 6) stop("Wrong number of columns")
+    colnames(df) <- c("chr", "start", "gene", "strand", "sequence", "codon")
+    df[] <- lapply(df, as.character)  # ensure all columns are character
+    df$FileName <- basename(file_path)
+    df
+  }, error = function(e) {
+    cat("Error reading section of file:", file_path, " - ", e$message, "\n")
+    return(NULL)
+  })
+}
+
+# ---- Main file processing function ----
+process_file <- function(file_path) {
+  cat("Processing file:", file_path, "\n")
+  
+  # Read the file into a character vector
+  lines <- readLines(file_path)
+  
+  # Find the indices of each Nm section marker
+  index_m3 <- grep("\\-3 Nm", lines)
+  index_m2 <- grep("\\-2 Nm", lines)
+  index_m1 <- grep("\\-1 Nm", lines)
+  index_1  <- grep("\\+1 Nm", lines)
+  index_2  <- grep("\\+2 Nm", lines)
+  index_3  <- grep("\\+3 Nm", lines)
+  index_4  <- grep("\\+4 Nm", lines)
+  
+  # Ensure that all section markers are present
+  all_indices <- list(index_m3, index_m2, index_m1, index_1, index_2, index_3, index_4)
+  if (any(sapply(all_indices, length) == 0)) {
+    cat("Missing one or more section headers in:", file_path, "\n")
+    return(NULL)
+  }
+  
+  # Helper to filter valid lines with exactly 6 fields
+  filter_valid_lines <- function(lines) {
+    valid_lines <- lines[sapply(strsplit(lines, "\t"), function(x) {
+      if (length(x) != 6) {
+        cat("Invalid line (expected 6 fields):", paste(x, collapse = "\t"), "\n")
+        return(FALSE)
+      }
+      return(TRUE)
+    })]
+    return(valid_lines)
+  }
+  
+  # Extract section lines
+  get_section_lines <- function(start_idx, end_idx) {
+    if (start_idx + 1 <= end_idx - 1) {
+      return(filter_valid_lines(lines[(start_idx + 1):(end_idx - 1)]))
+    } else {
+      return(character())
+    }
+  }
+  
+  # Collect valid lines for each section
+  section_lines <- list(
+    m3 = get_section_lines(index_m3, index_m2),
+    m2 = get_section_lines(index_m2, index_m1),
+    m1 = get_section_lines(index_m1, index_1),
+    p1 = get_section_lines(index_1, index_2),
+    p2 = get_section_lines(index_2, index_3),
+    p3 = get_section_lines(index_3, index_4),
+    p4 = filter_valid_lines(lines[(index_4 + 1):length(lines)])
+  )
+  
+  # Read each section into a dataframe using `read_section`
+  section_dfs <- lapply(section_lines, function(section) {
+    if (length(section) == 0) return(NULL)
+    read_section(paste(section, collapse = "\n"), file_path)
+  })
+  
+  names(section_dfs) <- c("-3Nm", "-2Nm", "-1Nm", "+1Nm", "+2Nm", "+3Nm", "+4Nm")
+  
+  return(section_dfs)
+}
+
+# read in cognates sequence files
+cognate_files <- list.files(path = "/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome", pattern = "*Cognates.bed$", full.names = TRUE)
+
+# Apply process_file() to each file
+results_list <- lapply(cognate_files, process_file)
+
+all_combined <- bind_rows(
+  lapply(results_list, function(section_list) {
+    bind_rows(section_list, .id = "Nm_section")
+  })
+)
+
+## Plot Counts ----
+
+#initialize vector of near start codons
+near_cognate_codons <- c("ATG", "GTG", "TTG", "CTG", "ATA", "ATC", "ATT", "AGG", "ACG", "AAG")
+
+# Filter for +1Nm and extract nucleotides 6–8
+filtered_plus1 <- all_combined %>%
+  filter(Nm_section == "+1Nm")
+
+```
+```{r all sites per codon, message=FALSE, warning = FALSE, fig.width=8, fig.height=6, fig.path='sitesPerCodon/', dev=c('png', 'pdf')}
+
+unique_rows <- filtered_plus1 %>%
+  distinct(chr, start, strand, .keep_all = TRUE)
+
+# Count occurrences by codon, FileName, Study, and Cell_Line
+counts_per_codon <- unique_rows %>%
+  group_by(codon) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  complete(codon = near_cognate_codons, fill = list(Count = 0)) %>%
+  mutate(
+      codon = fct_reorder(codon, Count, .desc = TRUE),
+      fill_color = ifelse(codon == "ATG", "tomato1", "royalblue1")
+    )
+
+ggplot(counts_per_codon, aes(x = codon, y = Count, fill = fill_color)) +
+    geom_bar(stat = "identity", width = 0.7, color = NA) +
+    scale_fill_identity() +
+    labs(
+      title = paste("Prevalence of Nm[+1] per Codon"),
+      x = "Codon",
+      y = "Number of Sites"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(color = "black", linewidth = 0.8),
+      axis.ticks = element_line(color = "black"),
+      axis.ticks.length = unit(0.25, "cm"),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "none"
+    )
+
+```

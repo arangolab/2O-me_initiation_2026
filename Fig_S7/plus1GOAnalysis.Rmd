@@ -1,0 +1,195 @@
+---
+title: "Nm[+1] Genes - GO Analysis"
+author: "Hannah Serio"
+date: "2025-06-04"
+output: html_document
+---
+
+```{r libraries, include=FALSE}
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ggplot2)
+library(DOSE)
+library(readxl)
+library(openxlsx)
+
+```
+
+## GO Analysis - Nm[+1] Genes
+
+```{r GOplots, warning=FALSE, fig.width=9, fig.height=6, fig.path='R_plots_GO/', dev=c('png', 'pdf')}
+
+# function to run GO analysis for all three ontologies, outputting the top 5 results with -log10(pvalue)
+run_go_analysis <- function(genes, 
+                           orgdb = org.Hs.eg.db, 
+                           keytype = "SYMBOL", 
+                           plot_title = "GO Analysis") {
+  
+  # define the ontologies
+  ontologies <- c("BP", "CC", "MF")
+  
+  # initialize empty list to store results
+  all_results <- list()
+  
+  # run GO enrichment for each ontology
+  for (ont in ontologies) {
+    go_result <- enrichGO(gene          = genes, 
+                          OrgDb         = orgdb, 
+                          keyType       = keytype, 
+                          ont           = ont, 
+                          pAdjustMethod = "BH",
+                          pvalueCutoff  = 1)
+    
+    # convert to data frame
+    go_df <- as.data.frame(go_result)
+    
+    # if we have results, take top 5 and add ontology column
+    if (nrow(go_df) > 0) {
+      # calculate -log10(pvalue)
+      go_df$logP <- -log10(go_df$pvalue)
+      
+      # add ontology column
+      go_df$ontology <- ont
+      
+      # get top 5 results (already sorted by p-value)
+      top_results <- head(go_df, 5)
+      
+      # store in list
+      all_results[[ont]] <- top_results
+    }
+  }
+  
+  # combine all results into single data frame
+  if (length(all_results) > 0) {
+    combined_results <- do.call(rbind, all_results)
+    rownames(combined_results) <- NULL
+    return(combined_results)
+  } else {
+    # return empty data frame with expected columns if no results
+    return(data.frame(
+      ONTOLOGY = character(0),
+      ID = character(0),
+      Description = character(0),
+      GeneRatio = character(0),
+      BgRatio = character(0),
+      pvalue = numeric(0),
+      p.adjust = numeric(0),
+      qvalue = numeric(0),
+      geneID = character(0),
+      Count = integer(0),
+      logP = numeric(0),
+      ontology = character(0)
+    ))
+  }
+}
+
+NUGgenes <- read.table("/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome/GOanalysis/nugNMgenes.txt")
+CUGgenes <- read.table("/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome/GOanalysis/cugNMgenes.txt")
+GUGgenes <- read.table("/Volumes/fsmresfiles/Basic_Sciences/Pharm/Arango_Lab/Quest/2ometh/5utrSequence/nmPositionsGenome/GOanalysis/gugNMgenes.txt")
+
+# All Nm[+1] genes, any codon
+resultsNUG <- run_go_analysis(genes = NUGgenes$V1)
+resultsCUG <- run_go_analysis(genes = CUGgenes$V1)
+resultsGUG <- run_go_analysis(genes = GUGgenes$V1)
+
+# function to create dot plot from GO analysis results
+plot_go_dotplot <- function(go_results, 
+                           title = "GO Enrichment Analysis",
+                           x_axis = "pvalue",  # can be "pvalue", "p.adjust", or "logP"
+                           max_char = 50) {  # maximum characters for category names
+  
+  # truncate long descriptions for better readability
+  go_results$Description_short <- ifelse(
+    nchar(go_results$Description) > max_char,
+    paste0(substr(go_results$Description, 1, max_char), "..."),
+    go_results$Description
+  )
+  
+  # create factor for ordering (most significant first)
+  if (x_axis == "logP") {
+    go_results <- go_results[order(-go_results$logP), ]
+  } else {
+    go_results <- go_results[order(go_results[[x_axis]]), ]
+  }
+  
+  go_results$Description_short <- factor(go_results$Description_short, 
+                                        levels = rev(unique(go_results$Description_short)))
+  
+  # set up x-axis label and values
+  if (x_axis == "pvalue") {
+    x_label <- "P-value"
+    x_values <- go_results$pvalue
+  } else if (x_axis == "p.adjust") {
+    x_label <- "Adjusted P-value"
+    x_values <- go_results$p.adjust
+  } else if (x_axis == "logP") {
+    x_label <- "-log10(P-value)"
+    x_values <- go_results$logP
+  } else {
+    stop("x_axis must be 'pvalue', 'p.adjust', or 'logP'")
+  }
+  
+  # create color palette for ontologies
+  ont_colors <- c("BP" = "#1f77b4",   # blue
+                  "CC" = "#ff7f0e",   # orange  
+                  "MF" = "#2ca02c")   # green
+  
+  # create the plot
+  p <- ggplot(go_results, aes(x = x_values, 
+                             y = Description_short, 
+                             color = ontology, 
+                             size = Count)) +
+    geom_segment(aes(x = 0, xend = x_values, 
+                     y = Description_short, yend = Description_short,
+                     color = ontology), 
+                 alpha = 0.6, size = 0.8) +
+    geom_point() +
+    scale_color_manual(values = ont_colors,
+                      name = "Ontology",
+                      labels = c("BP" = "Biological Process",
+                                "CC" = "Cellular Component", 
+                                "MF" = "Molecular Function")) +
+    scale_size_continuous(name = "Gene Count",
+                         range = c(2, 8)) +
+    labs(title = title,
+         x = x_label,
+         y = NULL) +
+    theme_minimal() +
+    theme(axis.text.y = element_text(size = 10),
+          axis.text.x = element_text(size = 10),
+          plot.title = element_text(size = 14, hjust = 0.5),
+          legend.title = element_text(size = 11),
+          legend.text = element_text(size = 10),
+          panel.grid.major.y = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          axis.line = element_line(color = "black"),
+          axis.ticks = element_line(color = "black"))
+  
+  # adjust x-axis formatting based on the values
+  if (x_axis %in% c("pvalue", "p.adjust")) {
+    if (max(x_values) < 0.01) {
+      p <- p + scale_x_continuous(labels = scales::scientific_format())
+    }
+  }
+  
+  return(p)
+}
+
+resultsNUGplot <- plot_go_dotplot(go_result = resultsNUG,
+                                    title = "AUG/CUG/GUG Genes with Nm[+1]",
+                                    x_axis = "logP")
+resultsNUGplot
+
+resultsCUGplot <- plot_go_dotplot(go_result = resultsCUG,
+                                    title = "CUG Nm[+1]",
+                                    x_axis = "logP")
+resultsCUGplot
+
+resultsGUGplot <- plot_go_dotplot(go_result = resultsGUG,
+                                    title = "GUG Nm[+1]",
+                                    x_axis = "logP")
+resultsGUGplot
+
+```
