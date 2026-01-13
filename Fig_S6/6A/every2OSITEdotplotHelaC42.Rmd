@@ -1,0 +1,111 @@
+---
+title: "2oMeBiotype"
+author: "Hannah Serio"
+date: "2025-12-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+
+```
+
+## Nanopore Study
+```{r Nanopore, warning=FALSE, fig.width=6, fig.height=5, fig.path='R_plots/every2OsiteNanoporeHelaC42', dev=c('png', 'pdf')}
+
+mlmHELA <- read.table("./mlm/HeLalocation0based_filtered.bed", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+mlmC42 <- read.table("./mlm/C42cells/C42cellsIndependentofHela/AllC42sites0based_filtered.bed", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+summarize_consequence_counts <- function(df) {
+  five_utr_count <- sum(df$consequence == "5UTR", na.rm = TRUE)
+  cds_count <- sum(df$consequence == "CDS", na.rm = TRUE)
+  three_utr_count <- sum(df$consequence == "3UTR", na.rm = TRUE)
+  
+  total_count <- sum(df$consequence %in% c("5UTR", "CDS", "3UTR"), na.rm = TRUE)
+
+  summary_table <- tibble::tibble(
+    Category = c("five_utr", "cds", "three_utr", "total"),
+    Count = c(five_utr_count, cds_count, three_utr_count, total_count)
+  )
+  
+  return(summary_table)
+}
+
+mlmC42_counts <- summarize_consequence_counts(mlmC42)
+mlmHELA_counts <- summarize_consequence_counts(mlmHELA)
+
+# List of data frames
+summary_list <- list(mlmHELA_counts, mlmC42_counts)
+cell_lines <- c("HeLa", "C4-2")
+
+# custom colors
+custom_colors <- c("HeLa" = "skyblue2", "C4-2" = "khaki")
+
+
+plot_biotype_summary <- function(summary_list, 
+                                     cell_lines, 
+                                     plot_title = "Biotype Summary",
+                                 plot_subtitle = "study name",
+                                     dot_colors = NULL) {
+  # Combine data and tag with CellLine
+  combined_df <- do.call(rbind, Map(function(df, name) {
+    df$CellLine <- name
+    return(df)
+  }, summary_list, cell_lines))
+
+  # Filter out 'total'
+  plot_df <- combined_df %>% dplyr::filter(Category != "total")
+
+  # Map categories to display labels
+  plot_df$Category <- recode(plot_df$Category,
+                             "five_utr" = "5'UTR",
+                             "cds" = "CDS",
+                             "three_utr" = "3'UTR")
+
+  # Set desired order of x-axis
+  plot_df$Category <- factor(plot_df$Category, levels = c("5'UTR", "CDS", "3'UTR"))
+
+  # Total site count for caption
+  total_value <- combined_df %>%
+    dplyr::filter(Category == "total") %>%
+    dplyr::pull(Count) %>%
+    sum()
+
+  # Default colors if none provided
+  if (is.null(dot_colors)) {
+    dot_colors <- RColorBrewer::brewer.pal(length(unique(plot_df$CellLine)), "Set2")
+  }
+
+  # Plot
+  p <- ggplot(plot_df, aes(x = Category, y = Count, color = CellLine)) +
+    geom_point(size = 3, position = position_jitter(width = 0.1, height = 0, seed = 4)) +
+    scale_color_manual(values = dot_colors) +
+    scale_x_discrete(drop = FALSE) +
+    theme_minimal(base_size = 14) +
+    labs(title = plot_title, subtitle = plot_subtitle, x = NULL, y = "# of sites", color = "Cell Line",
+         caption = paste("Total sites =", total_value)) +
+    theme(
+      panel.grid = element_blank(),               # Remove gridlines
+      plot.title = element_text(hjust = 0.5),
+      plot.subtitle = element_text(hjust = 0.5),
+      axis.line = element_line(color = "black"),  # Add clean axes
+      axis.ticks = element_line(color = "black"),
+      axis.text.x = element_text(size = 14),
+      axis.text.y = element_text(size = 14),
+      plot.caption = element_text(size = 14)
+    )
+
+  return(p)
+}
+
+mlmplot <- plot_biotype_summary(summary_list, cell_lines, 
+                                 plot_title = "Nanopore-DRS",
+                                plot_subtitle = "Li et. al. 2024",
+                                 dot_colors = custom_colors)
+mlmplot
+```
