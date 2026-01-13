@@ -26,6 +26,7 @@ Data is already filtered for Nm sites with ratio > 10%. The python script below 
 ```
 python formatForBedtools_NOFBL.py
 ```
+*script in S6A directory*
 #### Appending strand & mRNA consequence to HeLa & C4-2 datasets
 Since the raw data did not include strand, we need to merge the data with a GTF file that contains the strand.
 
@@ -33,6 +34,7 @@ A python script was used to convert Ensembl's Homo_sapiens.GRCh38.113.chr.gtf fi
 ```
 python gtfToBed.py
 ```
+*script in S6A directory*
 Then, bedtools intersect was used to overlay Nm site BED files and genomeConsequence0based.bed.
 ```
 bedtools intersect -a HeLaconsequence10.bed -b genomeConsequence0based.bed -wa -wb > HeLaconsequencetmp0based.bed
@@ -48,6 +50,7 @@ Since different transcripts from the same gene may have different mRNA consequen
 python addConsequence.py -i HeLalocation0based.bed -o HeLalocation0based_filtered.bed
 python addConsequence.py -i formattedAllC42sites0based.bed -o AllC42sites0based_filtered.bed
 ```
+*script in S6A directory*
 Now we have added the strand and mRNA consequence!
 ## Extracting the sequence flanking Nm sites
 Nm maps were renamed to distinguish cell lines as ```mlmHeLaSites.bed, AllC42sites0based_allSites.bed```. Then, the sequence flanking Nm sites in the 5'UTR were extracted using a python script.
