@@ -46,7 +46,7 @@ awk '$4 == $9' formattedAllC42sitestmp0based.bed > formattedAllC42sites0based.be
 Since different transcripts from the same gene may have different mRNA consequences at an Nm site, this script only includes the most common consequence per Nm site. 
 ```
 python addConsequence.py -i HeLalocation0based.bed -o HeLalocation0based_filtered.bed
-python ../addConsequence.py -i formattedAllC42sites0based.bed -o AllC42sites0based_filtered.bed
+python addConsequence.py -i formattedAllC42sites0based.bed -o AllC42sites0based_filtered.bed
 ```
 Now we have added the strand and mRNA consequence!
 
