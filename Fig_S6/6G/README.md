@@ -1,7 +1,6 @@
 # Supplementary Data 6G
 
-## File preparation per study
-Since we are using 2'O-methylation maps from different publications, file preparation differs slightly based on the original data provided.
+## File preparation
 ### Nanopore-DRS (Li et. al. 2024)
 Table S5 (excel file) contains a list of Nm sites in HeLa cells. The data was missing each Nm site's strand and mRNA consequence (5UTR, CDS, or 3UTR) information. 
 
