@@ -17,9 +17,115 @@ library(dplyr)
 
 ```
 
+```
+# function to read a section safely
+read_section <- function(section_lines, file_path) {
+  tryCatch({
+    df <- read.table(text = section_lines, header = FALSE, stringsAsFactors = FALSE, sep = "\t")
+    if (ncol(df) != 6) stop("Wrong number of columns")
+    colnames(df) <- c("chr", "start", "gene", "strand", "sequence", "codon")
+    df[] <- lapply(df, as.character)  # ensure all columns are character
+    df$FileName <- basename(file_path)
+    df
+  }, error = function(e) {
+    cat("Error reading section of file:", file_path, " - ", e$message, "\n")
+    return(NULL)
+  })
+}
+
+# Main file processing function
+process_file <- function(file_path) {
+  cat("Processing file:", file_path, "\n")
+  
+  # Read the file into a character vector
+  lines <- readLines(file_path)
+  
+  # Find the indices of each Nm section marker
+  index_m3 <- grep("\\-3 Nm", lines)
+  index_m2 <- grep("\\-2 Nm", lines)
+  index_m1 <- grep("\\-1 Nm", lines)
+  index_1  <- grep("\\+1 Nm", lines)
+  index_2  <- grep("\\+2 Nm", lines)
+  index_3  <- grep("\\+3 Nm", lines)
+  index_4  <- grep("\\+4 Nm", lines)
+  
+  # Ensure that all section markers are present
+  all_indices <- list(index_m3, index_m2, index_m1, index_1, index_2, index_3, index_4)
+  if (any(sapply(all_indices, length) == 0)) {
+    cat("Missing one or more section headers in:", file_path, "\n")
+    return(NULL)
+  }
+  
+  # Helper to filter valid lines with exactly 6 fields
+  filter_valid_lines <- function(lines) {
+    valid_lines <- lines[sapply(strsplit(lines, "\t"), function(x) {
+      if (length(x) != 6) {
+        cat("Invalid line (expected 6 fields):", paste(x, collapse = "\t"), "\n")
+        return(FALSE)
+      }
+      return(TRUE)
+    })]
+    return(valid_lines)
+  }
+  
+  # Extract section lines
+  get_section_lines <- function(start_idx, end_idx) {
+    if (start_idx + 1 <= end_idx - 1) {
+      return(filter_valid_lines(lines[(start_idx + 1):(end_idx - 1)]))
+    } else {
+      return(character())
+    }
+  }
+  
+  # Collect valid lines for each section
+  section_lines <- list(
+    m3 = get_section_lines(index_m3, index_m2),
+    m2 = get_section_lines(index_m2, index_m1),
+    m1 = get_section_lines(index_m1, index_1),
+    p1 = get_section_lines(index_1, index_2),
+    p2 = get_section_lines(index_2, index_3),
+    p3 = get_section_lines(index_3, index_4),
+    p4 = filter_valid_lines(lines[(index_4 + 1):length(lines)])
+  )
+  
+  # Read each section into a dataframe using `read_section`
+  section_dfs <- lapply(section_lines, function(section) {
+    if (length(section) == 0) return(NULL)
+    read_section(paste(section, collapse = "\n"), file_path)
+  })
+  
+  names(section_dfs) <- c("-3Nm", "-2Nm", "-1Nm", "+1Nm", "+2Nm", "+3Nm", "+4Nm")
+  
+  return(section_dfs)
+}
+
+# ---- Specify individual file paths and assign cell line names ----
+cognate_files <- list(
+  HeLa = "./mlmHeLaCognates.bed",
+  `C4-2` = "../../mlm/C42cells/C42cellsIndependentofHela/AllC42Cognates.bed"
+)
+
+# Process files and add cell line information
+results_list <- lapply(names(cognate_files), function(cell_line) {
+  file_path <- cognate_files[[cell_line]]
+  result <- process_file(file_path)
+  if (!is.null(result)) {
+    # Add cell line name to each dataframe in the list
+    result <- lapply(result, function(df) {
+      if (!is.null(df)) {
+        df$Cell_Line <- cell_line
+      }
+      return(df)
+    })
+  }
+  return(result)
+})
+```
+
 # Data Prep for GO Analysis - Nm[+1] Genes in 5'UTR
 ```{r dataprep, warning=FALSE}
 
+### ignore excel file - use code above to generate sitesHeLa and C42
 excel_file <- "5UTRNmPlus1Sites.xlsx" # table separated by sheets C-42, HeLa, and C4-2/HeLa overlap
 sitesHeLa <- read_excel(excel_file, sheet = "HeLa", col_names = TRUE)
 sitesC42 <- read_excel(excel_file, sheet = "C4-2", col_names = TRUE)
