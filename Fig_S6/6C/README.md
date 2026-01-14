@@ -66,15 +66,8 @@ python cognates.py -i "$BED_SEQ" -o "$BED_COGNATES"
 ```
 *script in S6B directory*
 
-## Merging Nm Sites from all studies / cell lines
-This script parses the "$BED_COGNATES" files and creates separate BED files per Nm site position (-3, -2, -1, 1, 2, 3, 4). 
-```
-python collectAllNm.py
-```
-Outputs allGene_1.bed.
 ## GO Analysis for Nm[+1] genes per Nm near-cognate codon
-```plus1GOAnalysis.Rmd``` generates dot plots for gene ontologies for Nm[+1] sites per near-cognate codon. The markdown is plus1GOAnalysis.html.
+```GOanalysisC42HeLaCombinedCategories.Rmd``` generates dot plots for gene ontologies for Nm[+1] sites per near-cognate codon. The markdown is GOanalysisC42HeLaCombinedCategories.html.
 The data sets needed to reproduce the plots are:
-* nugNMgenes.txt
-* cugNMgenes.txt
-* gugNMgenes.txt
+* AllC42Cognates.bed
+* mlmHeLaCognates.bed
