@@ -66,8 +66,8 @@ python cognates.py -i "$BED_SEQ" -o "$BED_COGNATES"
 ```
 *script in S6B directory*
 
-## GO Analysis for Nm[+1] genes per Nm near-cognate codon
-```GOanalysisC42HeLaCombinedCategories.Rmd``` generates dot plots for gene ontologies for Nm[+1] sites per near-cognate codon. The markdown is GOanalysisC42HeLaCombinedCategories.html.
+## Upset plot for 5'UTR Nm[+1] sites
+```NmPlus1inHeLaAllC42UpsetPlot.Rmd``` generates an upset plot showing common 5'UTR Nm[+1] sites between HeLa and C4-2 cell lines. The markdown is NmPlus1inHeLaAllC42UpsetPlot.html.
 The data sets needed to reproduce the plots are:
 * AllC42Cognates.bed (file in S6B)
 * mlmHeLaCognates.bed (file in S6B)
