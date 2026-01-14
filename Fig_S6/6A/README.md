@@ -49,7 +49,7 @@ python addConsequence.py -i formattedAllC42sites0based.bed -o AllC42sites0based_
 ```
 Now we have added the strand and mRNA consequence!
 
-## Analyzing mRNA consequence per study and cell line
+## Analyzing mRNA consequence per cell line
 ```every2OSITEdotplotHelaC42.Rmd``` creates a dotplot showing the distribution of Nm sites for each mRNA consequence per cell line.
 The data sets needed to reproduce the plots are:
 * HeLalocation0based_filtered.bed
