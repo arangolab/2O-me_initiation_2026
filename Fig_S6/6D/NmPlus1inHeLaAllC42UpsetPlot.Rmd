@@ -1,0 +1,87 @@
+---
+title: "Nm +1 in C42, HeLa"
+author: "Hannah Serio"
+date: "2025-12-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(UpSetR)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(ggpubr)
+library(grid)
+library(openxlsx)
+library(readxl)
+
+```
+
+## Prep Data
+```{r prepData}
+
+HeLasitesAllStudies <- read.csv("../../5utrSequence/nmPositionsGenome/pos1sitesFormatted.bed", header = TRUE, sep = "\t")
+
+# Filter for +1Nm
+HeLasites <- HeLasitesAllStudies %>%
+  filter(Reference == "Nanopore" & Cell_Line == "HeLa")
+
+# colnames for C42sites are: chrom, start, end, gene_name, strand, codon, ratio_siCTRL_1, ratio_siCTRL_2, ratio_siFBL_1, ratio_siFBL_2)
+C42sites <- read.csv("./C42cellsIndependentofHela/5utrNearCognatesNmPos.bed", header = TRUE, sep = "\t")
+
+# Process C42 sites to create the 'pos' column
+# When strand is negative (-), use 'end'
+# When strand is positive (+), use 'start + 1'
+C42sites$pos <- ifelse(C42sites$strand == "-", 
+                       C42sites$end, 
+                       C42sites$start + 1)
+
+# Create unique identifiers for each site (chrom:pos:strand)
+C42sites$site_id <- paste(C42sites$chrom, C42sites$pos, C42sites$strand, sep = ":")
+HeLasites$site_id <- paste(HeLasites$Chr, HeLasites$Nm..1._Position, HeLasites$Strand, sep = ":")
+
+## TE Dataset
+# Translation efficiency values from Table S2B in C4-2 cells
+TE_table <- read.csv("TE_table.csv", header = TRUE, sep = ",")
+
+# list of genes containing an Nm site in the 5'UTR
+genesWithNmLocation_HeLa <- readLines("../HeLalocation0based_filtered.bed")
+
+genesWithNmLocation_C42FBL <- readLines("./C42cellsIndependentofHela/C42sites0based_filtered.bed")
+
+genesWithNmLocation_C42ALL <- readLines("./C42cellsIndependentofHela/AllC42sites0based_filtered.bed")
+
+```
+
+## Upset Plot
+```{r upsetPlot, warning=FALSE, fig.width=8, fig.height=5, fig.path='Rplots_upsetONLYAllNearCognatesHelaAllC42/', dev=c('png', 'pdf')}
+
+# Get unique site IDs from each dataset
+C42_unique <- unique(C42sites$site_id)
+HeLa_unique <- unique(HeLasites$site_id)
+
+# Create a list of all unique sites
+all_sites <- unique(c(C42_unique, HeLa_unique))
+
+# Create a binary matrix for UpSet plot
+upset_data <- data.frame(
+  site_id = all_sites,
+  C42 = as.integer(all_sites %in% C42_unique),
+  HeLa = as.integer(all_sites %in% HeLa_unique)
+)
+
+# Create the UpSet plot
+upset(upset_data, 
+      sets = c("C42", "HeLa"),
+      order.by = "freq",
+      main.bar.color = "steelblue",
+      sets.bar.color = "darkblue",
+      text.scale = c(1.5, 1.3, 1.2, 1.2, 1.5, 1.2),
+      point.size = 3.5,
+      mainbar.y.label = "Number of Nm[+1] Sites",
+      sets.x.label = "5'UTR Nm[+1] Near-Cognates",
+      line.size = 1)
+
+```
