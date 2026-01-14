@@ -69,5 +69,5 @@ python cognates.py -i "$BED_SEQ" -o "$BED_COGNATES"
 ## GO Analysis for Nm[+1] genes per Nm near-cognate codon
 ```GOanalysisC42HeLaCombinedCategories.Rmd``` generates dot plots for gene ontologies for Nm[+1] sites per near-cognate codon. The markdown is GOanalysisC42HeLaCombinedCategories.html.
 The data sets needed to reproduce the plots are:
-* AllC42Cognates.bed
-* mlmHeLaCognates.bed
+* AllC42Cognates.bed (file in S6B)
+* mlmHeLaCognates.bed (file in S6B)
