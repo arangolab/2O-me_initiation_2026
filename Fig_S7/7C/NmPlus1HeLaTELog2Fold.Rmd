@@ -1,0 +1,293 @@
+---
+title: "TE in HeLa FBL KD when Nm +1 in 5UTR"
+author: "Hannah Serio"
+date: "2026-01-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(biomaRt)
+library(DESeq2)
+library(tidyverse)
+library(openxlsx)
+
+```
+
+# Prepare count data
+```{r countDataPrep, eval = FALSE}
+# Raw RNA-seq counts from publication
+rnaSeqCounts <- read.csv("../rawFastqData/GSE105248_raw_counts_GRCh38.p13_NCBI.tsv", header = TRUE, sep = '\t', row.names = 1)
+
+colnames(rnaSeqCounts) <- c("control.1", "doxy.1", "doxy.2", "control.2", "doxy.3")
+
+# Derived Ribo-seq counts after aligning to the transcriptome and running featureCounts
+featureCountsOutput <- read.csv("../featureCounts/counts.txt", header = TRUE, sep = '\t', comment.char = "#", check.names = FALSE)
+
+# Need to convert featureCounts ensemble gene ID to NCBI gene ID to be compatible with RNA-seq counts
+ensembl <- useMart(
+  "ensembl",
+  dataset = "hsapiens_gene_ensembl"
+)
+# strip Ensemble version #
+featureCountsOutput$ensembl_id <- sub("\\..*", "", featureCountsOutput$Geneid)
+# retrieve matching NCBI id's
+mapping <- getBM(
+  attributes = c(
+    "ensembl_gene_id",
+    "entrezgene_id",
+    "external_gene_name",
+    "gene_biotype"
+  ),
+  filters = "ensembl_gene_id",
+  values = unique(featureCountsOutput$ensembl_id),
+  mart = ensembl
+)
+# select for protein coding genes only
+mapping_pc <- mapping %>%
+  filter(gene_biotype == "protein_coding")
+
+# merge NCBI ID's to count table
+featureCounts_annotated <- featureCountsOutput %>%
+  left_join(mapping_pc,
+            by = c("ensembl_id" = "ensembl_gene_id"))
+
+# check # of genes without NCBI ID
+sum(is.na(featureCounts_annotated$entrezgene_id))
+
+# select desired columns
+fcSubset <- featureCounts_annotated[, c(14, 7:8, 10:12)]
+
+# remove rows with NA Entrez IDs
+fcSubset <- fcSubset[!is.na(fcSubset$entrezgene_id), ]
+
+# collapse duplicate Entrez IDs by summing counts
+fcSubset <- fcSubset %>%
+  group_by(entrezgene_id) %>%
+  summarise(across(where(is.numeric), sum), .groups = "drop")
+
+# make tibble a df to allow setting rownames 
+riboSeqCounts <- as.data.frame(fcSubset)
+# set Entrez IDs as row names
+rownames(riboSeqCounts) <- riboSeqCounts$entrezgene_id
+riboSeqCounts$entrezgene_id <- NULL
+
+colnames(riboSeqCounts) <- c("control.1", "doxy.1", "doxy.2", "control.2", "doxy.3")
+
+## Datasets are ready for analysis!
+
+# Create a simple sample info dataframe
+colData <- data.frame(sample = colnames(rnaSeqCounts))
+rownames(colData) <- colnames(rnaSeqCounts)
+
+## DESeq2 uses median of ratios normalization, similar to TPM
+## Does not account for gene length -- gene length cancels out!
+
+## Calculates mean count per gene across all samples, and calculates the degree of variation (ratio) of each sample from the mean & uses this to normalize the data
+## Essentially corrects for library size differences
+# Normalize RNA-seq counts
+dds_rna <- DESeqDataSetFromMatrix(rnaSeqCounts, colData, design = ~1)
+dds_rna <- estimateSizeFactors(dds_rna)
+rna_norm <- counts(dds_rna, normalized=TRUE)
+
+# exclude genes where normalized RNA value == 0
+rna_norm <- rna_norm[rowSums(rna_norm > 0) == ncol(rna_norm), ]
+
+# Normalize Ribo-seq counts
+dds_ribo <- DESeqDataSetFromMatrix(riboSeqCounts, colData, design = ~1)
+dds_ribo <- estimateSizeFactors(dds_ribo)
+ribo_norm <- counts(dds_ribo, normalized=TRUE)
+
+# Find common genes between both datasets
+common_genes <- intersect(rownames(rna_norm), rownames(ribo_norm))
+
+# Subset both datasets for common genes
+rna_norm <- rna_norm[common_genes, ]
+ribo_norm <- ribo_norm[common_genes, ]
+
+# make sure samples match
+common_samples <- intersect(colnames(rna_norm), colnames(ribo_norm))
+rna_norm <- rna_norm[, common_samples]
+ribo_norm <- ribo_norm[, common_samples]
+
+# Calculate TE for each gene in each sample
+TE <- log2((ribo_norm + 1) / (rna_norm + 1))
+
+## Get gene symbols onto TE table
+# Convert TE matrix to data frame
+TE_df <- as.data.frame(TE)
+
+# Add entrez gene ID as a column (currently row names)
+TE_df$entrezgene_id <- rownames(TE_df)
+
+gene_symbols <- mapping %>%
+  mutate(entrezgene_id = as.character(entrezgene_id)) %>%
+  filter(entrezgene_id %in% rownames(TE_df)) %>%
+  dplyr::select(entrezgene_id, external_gene_name) %>%
+  distinct(entrezgene_id, .keep_all = TRUE)  # Keep first match if duplicates
+
+# Merge gene symbols with TE data
+TE_annotated <- TE_df %>%
+  left_join(gene_symbols, by = "entrezgene_id")
+
+# View results
+head(TE_annotated)
+
+# Save to file
+write.table(TE_annotated, "translation_efficiency.txt", 
+            sep="\t", quote=FALSE, row.names=FALSE)
+
+```
+
+## Nm Data Prep for HeLa - Nanopore Study
+```{r NmDataPrep}
+
+HeLasites <- read.xlsx("../../mlm/C42cells/5UTRNmPlus1Sites.xlsx", sheet = "HeLa", colNames = TRUE)
+
+HeLaAllNmLocations <- read.csv("HeLalocation0based_filtered.bed", header = TRUE, sep = "\t")
+
+# Load TE Dataset derived in the previous chunk
+TE_table <- read.csv("translation_efficiency.txt", header = TRUE, sep = "\t")
+
+# Calculate average values for control and doxy groups
+TE_table$control.avg <- rowMeans(TE_table[, c("control.1", "control.2")], na.rm = TRUE)
+TE_table$doxy.avg <- rowMeans(TE_table[, c("doxy.1", "doxy.2", "doxy.3")], na.rm = TRUE)
+
+# Add HeLaNmLocation column to mark genes that have 5'UTR Nm +1, Any 5'UTR Nm, or No 5'UTR Nm
+TE_table$HeLaNmLocation <- NA
+
+# Process each gene in TE_table
+for (i in 1:nrow(TE_table)) {
+  gene_name <- TE_table$external_gene_name[i]
+  
+  # First check if gene is in HeLasites
+  if (gene_name %in% HeLasites$Gene) {
+    TE_table$HeLaNmLocation[i] <- "Nm +1"
+  } else {
+    # Check if gene is in HeLaAllNmLocations
+    matching_rows <- HeLaAllNmLocations[HeLaAllNmLocations$gene == gene_name, ]
+    
+    if (nrow(matching_rows) > 0) {
+      # Check if ANY consequence is "5UTR"
+      if (any(matching_rows$consequence == "5UTR")) {
+        TE_table$HeLaNmLocation[i] <- "5UTR"
+      } else {
+        TE_table$HeLaNmLocation[i] <- "OTHER"
+      }
+    } else {
+      # Gene not found in either table -> mark as "OTHER"
+      TE_table$HeLaNmLocation[i] <- "OTHER"
+    }
+  }
+}
+
+# Save to file with gene names added
+TE_table_export <- TE_table %>%
+  # keep only desired rows
+  filter(HeLaNmLocation %in% c("OTHER", "Nm +1")) %>%
+  
+  # modify values
+  mutate(`Nm Status` = case_when(
+    HeLaNmLocation == "OTHER"  ~ "No 5UTR Nm",
+    HeLaNmLocation == "Nm +1"  ~ "5UTR Nm +1"
+  )) %>%
+  
+  # remove old column
+  dplyr::select(-HeLaNmLocation, -control.avg, -doxy.avg)
+
+
+write.table(
+  TE_table_export,
+  "translation_efficiency_NmStatus.txt",
+  sep = "\t",
+  quote = FALSE,
+  row.names = FALSE
+)
+
+```
+
+# TE boxplot: Log2FoldChange
+```{r translationEfficiencyLog2Fold}
+
+# Calculate log2 fold changes for each gene
+# Since TE is already log2-transformed, use subtraction instead of division
+TE_fold_change <- TE_table %>%
+  filter(HeLaNmLocation %in% c("Nm +1", "OTHER")) %>%
+  mutate(
+    # log2(A/B) = log2(A) - log2(B)
+    # Since TE is already log2, just subtract!
+    log2FC = doxy.avg - control.avg,
+    location_type = ifelse(HeLaNmLocation == "Nm +1", "Nm +1", "Non-Nm")
+  )
+
+# Set factor levels for proper ordering
+TE_fold_change$location_type <- factor(TE_fold_change$location_type,
+                                        levels = c("Nm +1", "Non-Nm"))
+
+# Calculate group counts
+fc_group_counts <- TE_fold_change %>%
+  group_by(location_type) %>%
+  summarise(n = n())
+
+# Perform statistical test between the two groups
+fc_test <- wilcox.test(
+  log2FC ~ location_type,
+  data = TE_fold_change
+)
+
+# Get y-axis range for positioning labels
+fc_y_range <- range(TE_fold_change$log2FC, na.rm = TRUE)
+fc_y_max <- fc_y_range[2]
+fc_y_min <- fc_y_range[1]
+fc_y_span <- fc_y_max - fc_y_min
+
+# Create the log2 fold change boxplot without outliers
+TE_FC_plot <- ggplot(TE_fold_change, aes(x = location_type, y = log2FC, fill = location_type)) +
+  geom_boxplot(outlier.shape = NA) +  # Hide outliers
+  labs(
+    title = "Log2 Fold Change in Translation Efficiency\nDoxycycline vs Control",
+    subtitle = "Nm[+1] Genes vs No Nm in 5'UTR Genes",
+    x = "",
+    y = "Log2 Fold Change (Doxy/Control)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = c(
+    "Nm +1" = "#E69F00",
+    "Non-Nm" = "#56B4E9"
+  )) +
+  # Add horizontal line at y = 0 (no change)
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  # Add comparison line and p-value
+  geom_segment(aes(x = 1, xend = 2, y = fc_y_max + 0.1 * fc_y_span, 
+                   yend = fc_y_max + 0.1 * fc_y_span)) +
+  geom_segment(aes(x = 1, xend = 1, y = fc_y_max + 0.1 * fc_y_span, 
+                   yend = fc_y_max + 0.08 * fc_y_span)) +
+  geom_segment(aes(x = 2, xend = 2, y = fc_y_max + 0.1 * fc_y_span, 
+                   yend = fc_y_max + 0.08 * fc_y_span)) +
+  annotate("text", x = 1.5, y = 1.3 + 0.13, 
+           label = paste0("p = ", sprintf("%.2e", fc_test$p.value)), size = 3.5) +
+  # Add n values below x-axis
+  annotate("text", x = 1, y = -1.35,
+           label = paste0("n = ", fc_group_counts$n[1]), size = 3) +
+  annotate("text", x = 2, y = -1.35,
+           label = paste0("n = ", fc_group_counts$n[2]), size = 3) +
+  # Expand y-axis to fit comparison and n values
+  coord_cartesian(ylim = c(-1.3, 1.5))
+
+TE_FC_plot
+
+
+```
