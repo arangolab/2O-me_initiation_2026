@@ -1,0 +1,309 @@
+---
+title: "Codons_5'UTR"
+author: "Daniel Arango"
+date: "07/30/2023 - 07/02/2025"
+output: html_document
+---
+
+### R Mardown
+
+```{r setup, message=FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Fig. S3A
+
+```{r Fig_S3A, fig.width=7.5, fig.height=5, fig.path='Fig_S3A/', dev=c('png', 'pdf')}
+
+# Load fasta file - The 5'UTR FastaFile was downloaded from UCSC using the list of genes for which we identified upstream p-sites in Arango et al 20222 Mol Cell 
+
+#Load packages
+library(Biostrings)
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+
+utr.fa <- readDNAStringSet("utr.fa")
+
+#Extract the sequence names and sequences from the DNAStringSet:
+sequence_names <- names(utr.fa)
+sequences <- as.character(utr.fa)
+
+#Create a data frame with sequence names and sequences:
+fasta_df <- data.frame(Sequence_Name = sequence_names, Sequence = sequences, stringsAsFactors = FALSE)
+
+# Calculate the width of each 5'UTR
+fasta_df$utr5.width <- nchar(fasta_df$Sequence)
+
+# Calculate the count of each trinucleotide per sequence "x"
+sequences <- DNAStringSet(x=fasta_df$Sequence) #get the DNA strings
+trinucleotide <- as.data.frame(trinucleotideFrequency(sequences,step=1,as.prob=F,as.array=F,fast.moving.side = "right",with.labels = T,simplify.as="matrix"))
+codons <- as.data.frame(trinucleotide)
+
+# Add a column named "ENST_ID" to the 'codon' data.frame
+
+codons$Sequence_Name <- fasta_df$Sequence_Name
+
+# Join trinucleotide counts to longest_utr_per_gene based on "transcript" column
+final <- left_join(fasta_df, codons, by = "Sequence_Name")
+
+# Select specific columns from the 'final' data.frame
+final.codons <- final[c("Sequence_Name", "utr5.width", "ATG")]
+
+# Create a table to count the occurrences of each ATG value
+sum_count_table <- table(final.codons$ATG, useNA = "ifany")
+
+# Convert the table to a data frame
+sum_count_df <- as.data.frame(sum_count_table)
+
+# Rename the columns
+colnames(sum_count_df) <- c("upstream_AUG", "Number_of_Transcripts")
+
+# Convert the "cryptic_codons" column to numeric
+sum_count_df$upstream_AUG <- as.numeric(as.character(sum_count_df$upstream_AUG))
+
+head(sum_count_df)
+
+#select the number of transcripts with 0 cryptic codons
+none <- subset(sum_count_df, upstream_AUG == 0)
+
+print(none)
+
+# Define the bin width (excluding 0)
+bin_width <- 1
+
+# Create bins for "Cryptic codons"
+sum_count_df$bin <- cut(sum_count_df$upstream_AUG,
+                        breaks = c(0, seq(bin_width, max(sum_count_df$upstream_AUG), by = bin_width)),
+                        include.lowest = FALSE, right = TRUE)
+
+# Summarize the data by the bins and calculate the sum of "Number_of_Transcripts" for each bin
+result <- aggregate(Number_of_Transcripts ~ bin, data = sum_count_df, sum)
+
+# Rename the columns in the result data.frame
+colnames(result) <- c("upstream_AUG", "Number_of_Transcripts")
+
+# Make new table binding the none with result
+codon_counts <- rbind(none,result)
+
+# Assuming your data frame is named 'codon_counts'
+subset_df.20rows <- codon_counts[1:20, ]
+subset_df.more.20rows <- codon_counts[21:36, ]
+
+# create new data.frame for the sum of all more than 150 codons
+subset_df.more.20 <- data.frame(upstream_AUG = ">20", Number_of_Transcripts = sum(subset_df.more.20rows$Number_of_Transcripts))
+
+# Make new table binding the new results
+codon_counts <- rbind(subset_df.20rows,subset_df.more.20)
+
+# Calculate the percentage of transcripts
+codon_counts$percent_transcripts <- 100 * codon_counts$Number_of_Transcripts / sum(codon_counts$Number_of_Transcripts)
+
+# Create bar plot for "Average" column with reordered data
+plot <- ggbarplot(data = codon_counts, x = "upstream_AUG", y = "percent_transcripts",
+                          fill = "lightgreen", title = "% transcripts with upstream_AUG",
+                          xlab = "Number of upstream_AUG", ylab = "Percent") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line.x = element_line(color = "black"),  # Add black x-axis line
+        axis.line.y = element_line(color = "black"),  # Add black y-axis line
+        axis.ticks = element_line(color = "black", size = 0.5)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 55)) # Set the x-axis to intercept 0 on the y-axis
+
+plot
+
+```
+
+# Fig. S3B
+
+```{r Fig_S3B, fig.width=7.5, fig.height=5, fig.path='Fig_S3B/', dev=c('png', 'pdf')}
+
+# Load fasta file - The 5'UTR FastaFile was downloaded from UCSC using the list of genes for which we identified upstream p-sites in Arango et al 20222 Mol Cell 
+
+utr.fa <- readDNAStringSet("utr.fa")
+
+#Extract the sequence names and sequences from the DNAStringSet:
+sequence_names <- names(utr.fa)
+sequences <- as.character(utr.fa)
+
+#Create a data frame with sequence names and sequences:
+fasta_df <- data.frame(Sequence_Name = sequence_names, Sequence = sequences, stringsAsFactors = FALSE)
+
+# Calculate the width of each 5'UTR
+fasta_df$utr5.width <- nchar(fasta_df$Sequence)
+
+# Calculate the count of each trinucleotide per sequence "x"
+sequences <- DNAStringSet(x=fasta_df$Sequence) #get the DNA strings
+trinucleotide <- as.data.frame(trinucleotideFrequency(sequences,step=1,as.prob=F,as.array=F,fast.moving.side = "right",with.labels = T,simplify.as="matrix"))
+codons <- as.data.frame(trinucleotide)
+
+# Add a column named "ENST_ID" to the 'codon' data.frame
+
+codons$Sequence_Name <- fasta_df$Sequence_Name
+
+# Join trinucleotide counts to longest_utr_per_gene based on "transcript" column
+final <- left_join(fasta_df, codons, by = "Sequence_Name")
+
+# Select specific columns from the 'final' data.frame
+final.codons <- final[c("Sequence_Name", "utr5.width", "CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATC", "ATT", "ATA")]
+
+final.codons$Sum_per_row <- rowSums(final.codons[, c("CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATC", "ATT", "ATA")], na.rm = TRUE)
+
+# Create a table to count the occurrences of each Sum_per_row value
+sum_count_table <- table(final.codons$Sum_per_row, useNA = "ifany")
+
+# Convert the table to a data frame
+sum_count_df <- as.data.frame(sum_count_table)
+
+# Rename the columns
+colnames(sum_count_df) <- c("cryptic_codons", "Number_of_Transcripts")
+
+# Convert the "cryptic_codons" column to numeric
+sum_count_df$cryptic_codons <- as.numeric(as.character(sum_count_df$cryptic_codons))
+
+head(sum_count_df)
+
+#select the number of transcripts with 0 cryptic codons
+none <- subset(sum_count_df, cryptic_codons == 0)
+
+print(none)
+
+# Define the bin width (excluding 0)
+bin_width <- 5
+
+# Create bins for "Cryptic codons"
+sum_count_df$bin <- cut(sum_count_df$cryptic_codons,
+                        breaks = c(0, seq(bin_width, max(sum_count_df$cryptic_codons), by = bin_width)),
+                        include.lowest = FALSE, right = TRUE)
+
+# Summarize the data by the bins and calculate the sum of "Number_of_Transcripts" for each bin
+result <- aggregate(Number_of_Transcripts ~ bin, data = sum_count_df, sum)
+
+# Rename the columns in the result data.frame
+colnames(result) <- c("cryptic_codons", "Number_of_Transcripts")
+
+# Make new table binding the none with result
+codon_counts <- rbind(none,result)
+
+# Assuming your data frame is named 'codon_counts'
+subset_df.100rows <- codon_counts[1:21, ]
+subset_df.more.100rows <- codon_counts[22:58, ]
+
+# create new data.frame for the sum of all more than 150 codons
+subset_df.more.100 <- data.frame(cryptic_codons = ">100", Number_of_Transcripts = sum(subset_df.more.100rows$Number_of_Transcripts))
+
+# Make new table binding the new results
+codon_counts <- rbind(subset_df.100rows,subset_df.more.100)
+
+# Calculate the percentage of transcripts
+codon_counts$percent_transcripts <- 100 * codon_counts$Number_of_Transcripts / sum(codon_counts$Number_of_Transcripts)
+
+# Create bar plot for "Average" column with reordered data
+plot <- ggbarplot(data = codon_counts, x = "cryptic_codons", y = "percent_transcripts",
+                          fill = "lightgreen", title = "% transcripts with cryptic codons",
+                          xlab = "Number of cryptic codons", ylab = "Percent") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line.x = element_line(color = "black"),  # Add black x-axis line
+        axis.line.y = element_line(color = "black"),  # Add black y-axis line
+        axis.ticks = element_line(color = "black", size = 0.5)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 15)) # Set the x-axis to intercept 0 on the y-axis
+
+plot
+
+
+```
+
+# Fig. S3C
+
+```{r Fig_S3C, fig.width=7.5, fig.height=5, fig.path='Fig_S3C/', dev=c('png', 'pdf')}
+
+####NOW SUMMIRIZE CODONS FROM FIG S3C
+# Calculate the sum of each column
+sum_per_column <- colSums(final.codons[, c("CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATC", "ATT", "ATA")], na.rm = TRUE)
+
+# Calculate the average of each column and approximate to the upper value
+average_per_column <- colMeans(final.codons[, c("CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATC", "ATT", "ATA")], na.rm = TRUE)
+
+# Create a new data frame to store the results
+summary_df <- data.frame(Trinucleotide = c("CTG", "GTG", "TTG", "AAG", "ACG", "AGG", "ATC", "ATT", "ATA"),
+                         Sum = sum_per_column,
+                         Average = average_per_column)
+
+# Print the updated summary_df table
+print(summary_df)
+
+# Arrange the data frame in descending order based on the "Sum" column
+summary_df_sum_ordered <- summary_df %>% arrange(desc(Sum))
+
+# Arrange the data frame in descending order based on the "Average" column
+summary_df_average_ordered <- summary_df %>% arrange(desc(Average))
+
+# Create bar plot for "Average" column with reordered data
+average_plot <- ggbarplot(data = summary_df_average_ordered, x = "Trinucleotide", y = "Average",
+                          fill = "lightgreen", title = "Average of Trinucleotide Counts",
+                          xlab = "Trinucleotide", ylab = "Average",
+                          add = "mean_se") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line.x = element_line(color = "black"),  # Add black x-axis line
+        axis.line.y = element_line(color = "black"),  # Add black y-axis line
+        axis.ticks = element_line(color = "black", size = 0.5)) + 
+  scale_y_continuous(expand = c(0, 0)) # Set the x-axis to intercept 0 on the y-axis
+
+average_plot
+
+```
+
+# Fig_S3E
+
+```{r Fig_S3E, fig.width=7.5, fig.height=5, fig.path='Fig_S3E/', dev=c('png', 'pdf')}
+
+#load data - Data was downloaded from Arango et al. 2022 Mol Cell. Initiation sites were identified experimentally using Harringtonine Ribo-seq in HeLa cells
+
+library(readxl)
+
+Initiation_sites <- read_excel("Table_S3_PMID_35679869.xlsx", sheet = "All_P-sites")
+Initiation_sites <- subset(Initiation_sites, psite_region == "5utr")
+
+
+initiation_counts <- as.data.frame(table(Initiation_sites$txid))
+
+# Create a table to count the occurrences of each initiation value
+sum_count_table <- table(initiation_counts$Freq, useNA = "ifany")
+
+# Convert the table to a data frame
+sum_count_df <- as.data.frame(sum_count_table)
+
+# Subtract 1 value from column one 
+sum_count_df$Var1 <- as.numeric(sum_count_df$Var1)
+sum_count_df$cryptic_codons <- (sum_count_df$Var1) - 1
+sum_count_df <- sum_count_df[,c(3,2)]
+
+# Rename the columns
+colnames(sum_count_df) <- c("cryptic_codons", "Number_of_Transcripts")
+
+# Calculate the percentage of transcripts
+sum_count_df$percent_transcripts <- 100 * sum_count_df$Number_of_Transcripts / sum(sum_count_df$Number_of_Transcripts)
+
+# Create bar plot for "Average" column with reordered data
+plot <- ggbarplot(data = sum_count_df, x = "cryptic_codons", y = "percent_transcripts",
+                          fill = "lightblue", title = "% transcripts with cryptic initiation sites",
+                          xlab = "Number of cryptic Initiation Sites", ylab = "Percent") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line.x = element_line(color = "black"),  # Add black x-axis line
+        axis.line.y = element_line(color = "black"),  # Add black y-axis line
+        axis.ticks = element_line(color = "black", size = 0.5)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 30)) # Set the x-axis to intercept 0 on the y-axis
+
+plot
+
+```
+
+
