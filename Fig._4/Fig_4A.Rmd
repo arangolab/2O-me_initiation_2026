@@ -1,0 +1,89 @@
+---
+title: "Fig_3B"
+author: "Daniel Arango"
+date: "07/30/2023 - 07/02/2025"
+output: html_document
+---
+
+### R Mardown
+
+
+
+```{r setup, message=FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+#Upstream initiation (P) sites in all 5'UTRs
+
+```{r Fig_3B, fig.width=7.5, fig.height=5, fig.path='Fig_3B/', dev=c('png', 'pdf')}
+
+## Load Packages and Data
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggpubr)
+
+#load data - Data was downloaded from Arango et al. 2022 Mol Cell. Initiation sites were identified experimentally using Harringtonine Ribo-seq in HeLa cells
+
+Initiation_sites <- read_excel("Table_S3_PMID_35679869.xlsx", sheet = "All_P-sites")
+
+initiation_counts <- as.data.frame(table(Initiation_sites$txid))
+
+#Get the cryptic codons from the experimentally obtained p-sites
+Initiation_sites$psite_from_start <- as.numeric(Initiation_sites$psite_from_start)
+Initiation_sites <- subset(Initiation_sites, psite_from_start < 0)
+
+# Count the occurrences of each "codon"
+codon_counts <- Initiation_sites %>%
+  count(codon)
+
+# View the resulting data frame
+print(codon_counts)
+
+# Replace 'U' with 'T' in the "codon" column
+codon_counts$codon <- gsub("U", "T", codon_counts$codon)
+
+# View the updated data frame
+print(codon_counts)
+
+# Arrange the data frame in descending order based on the "Sum" column
+codon_counts_ordered <- codon_counts %>% arrange(desc(n))
+
+# Get the percent of codons
+codon_counts_ordered$percent <- 100 * (codon_counts_ordered$n / sum(codon_counts_ordered$n))
+
+# Create bar plot for "Sum" column with reordered data
+codon_plot <- ggbarplot(data = codon_counts_ordered, x = "codon", y = "n",
+                      fill = "lightblue", title = "cryptic initiation sites per codon",
+                      xlab = "codon", ylab = "number of cryptic initiation sites per codon") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        axis.line.x = element_line(color = "black"),  # Add black x-axis line
+        axis.line.y = element_line(color = "black"),  # Add black y-axis line
+        axis.ticks = element_line(color = "black", size = 0.5)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 10000)) # Set the x-axis to intercept 0 on the y-axis
+
+codon_plot
+
+# Convert codon to a factor with levels in the same order as the data frame
+codon_counts_ordered$codon <- factor(codon_counts_ordered$codon, levels = codon_counts_ordered$codon)
+
+# Define a color palette (change the palette name as needed)
+manual_colors <- c("dodgerblue2", "red2", "darkgoldenrod2", "green4", "purple2", "saddlebrown", "gray2", "magenta1", "wheat1", "navyblue")
+
+# create a pie chart with the percent of codons
+my.pie <- ggplot(codon_counts_ordered, aes(x = factor(1), y = percent, fill = codon)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") + # This makes it a pie chart
+  theme_void() + # This removes background and axes labels
+  labs(fill = "Codon", title = "Codon Usage Percentages") +
+  scale_fill_manual(values = manual_colors) + # Use the manual colors
+  theme(legend.position = "right")
+
+my.pie
+
+```
+
+
