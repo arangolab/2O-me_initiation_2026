@@ -52,8 +52,8 @@ set ray_trace_mode, 1
 # Hydrogen bonds (between selections)
 dist hbonds_mRNA_tRNA, (donor and mRNA), (acceptor and tRNA), mode=2, cutoff=3.2
 dist hbonds_tRNA_mRNA, (donor and tRNA), (acceptor and mRNA), mode=2, cutoff=3.2
-dist hbonds_mRNA_eIF1A, (donor and eIF2a), (acceptor and mRNA), mode=2, cutoff=3.2
-dist hbonds_eIF2a_mRNA, (donor and mRNA), (acceptor and eIF2a), mode=2, cutoff=3.2
+dist hbonds_mRNA_18S, (donor and mRNA), (acceptor and 18S), mode=2, cutoff=3.2
+dist hbonds_18S_mRNA, (donor and 18S), (acceptor and mRNA), mode=2, cutoff=3.2
 
 # Dash styling (optional)
 set dash_color, yellow
