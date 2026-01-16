@@ -1,0 +1,78 @@
+---
+title: "distribution"
+author: "Daniel Arango"
+date: "12/29/2025"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r distribution, message = FALSE, warning = FALSE, fig.width=2, fig.height=4, fig.path='distribution/', dev=c('png', 'pdf')}
+
+library(readxl)
+library(ggplot2)
+
+# -----------------------------
+# Load the Excel file
+# -----------------------------
+file_path <- "5UTRNmPlus1Sites.xlsx"
+sheet_name <- "HeLa"
+
+df <- read_excel(file_path, sheet = sheet_name)
+
+# -----------------------------
+# Extract column of interest
+# -----------------------------
+column_name <- "HeLa Ratio"
+data <- df[[column_name]]
+data <- data[!is.na(data)]  # remove NA values
+
+# -----------------------------
+# Violin plot with boxplot inside
+# -----------------------------
+# Plot
+ggplot(data.frame(HeLA_ratio = data), aes(x = "", y = HeLA_ratio)) +
+  geom_violin(fill = "lightgray", trim = TRUE) +
+  geom_boxplot(
+    width = 0.15,
+    fill = "white",
+    outlier.shape = 16,
+    outlier.size = 2
+  ) +
+  scale_y_continuous(
+    breaks = seq(
+      from = floor(min(data) * 10) / 10,
+      to   = ceiling(max(data) * 10) / 10,
+      by   = 0.1
+    )
+  ) +
+  labs(
+    title = "Distribution of HeLA Ratio",
+    y = "HeLA ratio",
+    x = NULL
+  ) +
+  theme_bw()
+
+# -----------------------------
+# Histogram
+# -----------------------------
+ggplot(data.frame(HeLA_ratio = data), aes(x = HeLA_ratio)) +
+  geom_histogram(
+    bins = 30,
+    fill = "gray70",
+    color = "black"
+  ) +
+  labs(
+    title = "Histogram of HeLA Ratio",
+    x = "HeLA ratio",
+    y = "Count"
+  ) +
+  theme_bw()
+
+```
+
+
+
